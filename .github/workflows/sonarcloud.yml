@@ -1,0 +1,66 @@
+name: 4. SonarCloud Analysis
+
+on:
+  push:
+    branches: [ main, master, '**' ]
+  pull_request:
+    branches: [ main, master, '**' ]
+  workflow_call:
+    # This workflow can also be called by other workflows
+  workflow_dispatch:
+    # Allow manual triggering from Actions tab
+
+jobs:
+  sonarcloud:
+    name: SonarCloud Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+        
+    - name: Configure Git for long paths
+      run: git config --global core.longpaths true
+      
+    - name: Configure system for long paths (Linux)
+      run: |
+        # Increase path length limits for the build process
+        ulimit -s 65536 || true
+        # Set environment variables for Gradle to handle long paths
+        echo "GRADLE_OPTS=-Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Dorg.gradle.caching=true" >> $GITHUB_ENV
+        # Configure Gradle to use shorter paths for build output
+        echo "GRADLE_USER_HOME=$HOME/.gradle" >> $GITHUB_ENV
+      
+
+    - name: Set up Java Environment
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+        restore-keys: ${{ runner.os }}-m2
+    - name: Build and run tests with coverage
+      run: mvn -B clean package test jacoco:report
+    
+    - name: Set project key from repository name
+      id: set-project-key
+      run: echo "PROJECT_KEY=$(echo '${{ github.repository }}' | cut -d'/' -f2)" >> $GITHUB_ENV
+    
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # Needed to get PR information, if any
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        SONAR_ORGANIZATION: ${{ secrets.SONAR_ORGANIZATION }}
+      with:
+        projectBaseDir: .
+        args: >
+          -Dsonar.projectKey=${{ env.PROJECT_KEY }}
+          -Dsonar.organization=${{ secrets.SONAR_ORGANIZATION }}
+          -Dsonar.host.url=https://sonarcloud.io

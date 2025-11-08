@@ -1,0 +1,62 @@
+name: 3. EKS Deployment
+
+on:
+  push:
+    branches: [ main, master, '**' ]
+    # Can deploy from any branch, but typically only main/master in production
+  pull_request:
+    branches: [ main, master, '**' ]
+  workflow_call:
+    # This workflow can also be called by other workflows
+  workflow_dispatch:
+    # Allow manual triggering from Actions tab
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production # Use a GitHub Environment for protection
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Configure Git for long paths
+      run: git config --global core.longpaths true
+      
+    - name: Configure system for long paths (Linux)
+      run: |
+        # Increase path length limits for the build process
+        ulimit -s 65536 || true
+        # Set environment variables for Gradle to handle long paths (if Gradle is used)
+        echo "GRADLE_OPTS=-Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Dorg.gradle.caching=true" >> $GITHUB_ENV
+        # Configure Gradle to use shorter paths for build output
+        echo "GRADLE_USER_HOME=$HOME/.gradle" >> $GITHUB_ENV
+        
+    - name: Configure AWS Credentials for EKS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Build and Push Docker Image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        
+    - name: Deploy to EKS Cluster
+      uses: aws-actions/eks-set-context@v2
+      with:
+        cluster-name: ${{ secrets.EKS_CLUSTER_NAME }}
+        
+    - name: Update Deployment on EKS
+      run: |
+        echo "Deployment command (e.g., helm upgrade or kubectl apply) goes here."
