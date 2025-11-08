@@ -1,0 +1,41 @@
+name: 2. Code Quality Check (Checkstyle/Lint)
+
+on:
+  push:
+    branches: [ main, master, '**' ]
+  pull_request:
+    branches: [ main, master, '**' ]
+  workflow_call:
+    # This workflow can also be called by other workflows
+  workflow_dispatch:
+    # Allow manual triggering from Actions tab
+
+jobs:
+  checkstyle:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Configure Git for long paths
+      run: git config --global core.longpaths true
+      
+    - name: Configure system for long paths (Linux)
+      run: |
+        # Increase path length limits for the build process
+        ulimit -s 65536 || true
+        # Set environment variables for Gradle to handle long paths
+        echo "GRADLE_OPTS=-Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Dorg.gradle.caching=true" >> $GITHUB_ENV
+        # Configure Gradle to use shorter paths for build output
+        echo "GRADLE_USER_HOME=$HOME/.gradle" >> $GITHUB_ENV
+      
+
+    - name: Set up Java Environment
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Run Code Quality Checks
+      run: mvn validate # Executes Checkstyle plugin bound to validate phase
