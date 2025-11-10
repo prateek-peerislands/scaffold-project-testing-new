@@ -1,0 +1,168 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eks-app.fullname" . }}
+  labels:
+    {{- include "eks-app.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: {{ .Values.deploymentStrategy.type }}
+    {{- if eq .Values.deploymentStrategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ .Values.deploymentStrategy.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.deploymentStrategy.rollingUpdate.maxUnavailable }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "eks-app.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "eks-app.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      serviceAccountName: {{ include "eks-app.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.initContainers }}
+      initContainers:
+        {{- range .Values.initContainers }}
+        - name: {{ .name }}
+          {{- if .image }}
+          image: {{ .image }}
+          {{- end }}
+          {{- if .command }}
+          command:
+            {{- range .command }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if .args }}
+          args:
+            {{- range .args }}
+            - {{ . | quote }}
+            {{- end }}
+          {{- end }}
+          {{- if .env }}
+          env:
+            {{- range .env }}
+            - name: {{ .name }}
+              {{- if .value }}
+              value: {{ .value | quote }}
+              {{- else if .valueFrom }}
+              valueFrom:
+                {{- toYaml .valueFrom | nindent 16 }}
+              {{- end }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+      {{- end }}
+      containers:
+      - name: {{ .Chart.Name }}
+        securityContext:
+          {{- toYaml .Values.securityContext | nindent 12 }}
+        image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        {{- if .Values.command }}
+        command:
+          {{- range .Values.command }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.args }}
+        args:
+          {{- range .Values.args }}
+          - {{ . | quote }}
+          {{- end }}
+        {{- end }}
+        ports:
+        - name: http
+          containerPort: {{ .Values.service.targetPort }}
+          protocol: {{ .Values.service.protocol }}
+        {{- if .Values.healthCheck.enabled }}
+        {{- if .Values.healthCheck.livenessProbe.enabled }}
+        livenessProbe:
+          {{- include "eks-app.probe" . | nindent 10 }}
+          initialDelaySeconds: {{ .Values.healthCheck.livenessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthCheck.livenessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthCheck.livenessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.healthCheck.livenessProbe.successThreshold }}
+          failureThreshold: {{ .Values.healthCheck.livenessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.healthCheck.readinessProbe.enabled }}
+        readinessProbe:
+          {{- include "eks-app.probe" . | nindent 10 }}
+          initialDelaySeconds: {{ .Values.healthCheck.readinessProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthCheck.readinessProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthCheck.readinessProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.healthCheck.readinessProbe.successThreshold }}
+          failureThreshold: {{ .Values.healthCheck.readinessProbe.failureThreshold }}
+        {{- end }}
+        {{- if .Values.healthCheck.startupProbe.enabled }}
+        startupProbe:
+          {{- include "eks-app.probe" . | nindent 10 }}
+          initialDelaySeconds: {{ .Values.healthCheck.startupProbe.initialDelaySeconds }}
+          periodSeconds: {{ .Values.healthCheck.startupProbe.periodSeconds }}
+          timeoutSeconds: {{ .Values.healthCheck.startupProbe.timeoutSeconds }}
+          successThreshold: {{ .Values.healthCheck.startupProbe.successThreshold }}
+          failureThreshold: {{ .Values.healthCheck.startupProbe.failureThreshold }}
+        {{- end }}
+        {{- end }}
+        {{- if .Values.env }}
+        env:
+          {{- range .Values.env }}
+          - name: {{ .name }}
+            {{- if .value }}
+            value: {{ .value | quote }}
+            {{- else if .valueFrom }}
+            valueFrom:
+              {{- toYaml .valueFrom | nindent 14 }}
+            {{- end }}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.envFrom }}
+        envFrom:
+          {{- toYaml .Values.envFrom | nindent 10 }}
+        {{- end }}
+        {{- if .Values.volumeMounts }}
+        volumeMounts:
+          {{- toYaml .Values.volumeMounts | nindent 10 }}
+        {{- end }}
+        {{- if .Values.lifecycle }}
+        lifecycle:
+          {{- toYaml .Values.lifecycle | nindent 10 }}
+        {{- end }}
+        resources:
+          {{- toYaml .Values.resources | nindent 10 }}
+      {{- if .Values.volumes }}
+      volumes:
+        {{- toYaml .Values.volumes | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.extraPodSpec }}
+      {{- toYaml . | nindent 6 }}
+      {{- end }}
+

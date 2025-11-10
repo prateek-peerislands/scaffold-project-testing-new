@@ -1,0 +1,18 @@
+{{- if .Values.configMap.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.configMap.name | default (include "eks-app.fullname" .) }}
+  labels:
+    {{- include "eks-app.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := .Values.configMap.data }}
+  {{ $key }}: |
+    {{- if kindIs "map" $value }}
+    {{- toYaml $value | nindent 4 }}
+    {{- else }}
+    {{- $value | nindent 4 }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+

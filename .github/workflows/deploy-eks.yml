@@ -1,0 +1,132 @@
+name: 4. EKS Deployment
+on:
+  push:
+    branches: [ main, master, '**' ]
+    # Can deploy from any branch, but typically only main/master in production
+  pull_request:
+    branches: [ main, master, '**' ]
+  # workflow_call:
+    # This workflow can also be called by other workflows
+  workflow_dispatch:
+    # Allow manual triggering from Actions tab
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production # Use a GitHub Environment for protection
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+      
+    - name: Configure Git for long paths
+      run: git config --global core.longpaths true
+      
+    - name: Configure system for long paths (Linux)
+      run: |
+        # Increase path length limits for the build process
+        ulimit -s 65536 || true
+        # Set environment variables for Gradle to handle long paths (if Gradle is used)
+        echo "GRADLE_OPTS=-Dfile.encoding=UTF-8 -Duser.country=US -Duser.language=en -Dorg.gradle.caching=true" >> $GITHUB_ENV
+        # Configure Gradle to use shorter paths for build output
+        echo "GRADLE_USER_HOME=$HOME/.gradle" >> $GITHUB_ENV
+        
+    - name: Validate AWS Configuration
+      run: |
+        if [ -z "${{ vars.AWS_REGION }}" ]; then
+          echo "Error: AWS_REGION variable is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.AWS_ACCESS_KEY_ID }}" ]; then
+          echo "Error: AWS_ACCESS_KEY_ID secret is not set"
+          exit 1
+        fi
+        if [ -z "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]; then
+          echo "Error: AWS_SECRET_ACCESS_KEY secret is not set"
+          exit 1
+        fi
+        echo "AWS configuration validated"
+        
+    - name: Configure AWS Credentials for EKS
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ vars.AWS_REGION }}
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v2
+      
+    - name: Build and Push Docker Image to ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+        
+    - name: Install kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'latest'
+    
+    - name: Configure kubectl for EKS
+      run: |
+        aws eks update-kubeconfig --name ${{ vars.EKS_CLUSTER_NAME }} --region ${{ vars.AWS_REGION }}
+    
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Set deployment variables
+      id: set-vars
+      run: |
+        # Extract app name from repository (owner/repo format) or use provided secret/variable
+        # Default to repository name if not specified
+        # Helm release name will be the same as app name
+        if [ -z "$APP_NAME" ]; then
+          APP_NAME=$(echo '${{ github.repository }}' | cut -d'/' -f2)
+        fi
+        # Set namespace with default value if not provided
+        if [ -z "$K8S_NAMESPACE" ]; then
+          NAMESPACE="default"
+        else
+          NAMESPACE="$K8S_NAMESPACE"
+        fi
+        
+        echo "APP_NAME=$APP_NAME" >> $GITHUB_ENV
+        echo "NAMESPACE=$NAMESPACE" >> $GITHUB_ENV
+        echo "App Name: $APP_NAME (Helm release name will be the same)"
+        echo "Namespace: $NAMESPACE"
+      env:
+        APP_NAME: ${{ vars.APP_NAME }}
+        K8S_NAMESPACE: ${{ vars.K8S_NAMESPACE }}
+        
+    - name: Deploy with Helm
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+        IMAGE_TAG: ${{ github.sha }}
+        IMAGE_REPOSITORY: ${{ steps.login-ecr.outputs.registry }}/${{ vars.ECR_REPOSITORY }}
+      run: |
+        # Helm upgrade --install handles both install and upgrade automatically
+        # Helm release name is the same as app name
+        echo "Deploying ${{ env.APP_NAME }} to namespace ${{ env.NAMESPACE }}..."
+        helm upgrade --install ${{ env.APP_NAME }} ./helm/eks-app \
+          --namespace ${{ env.NAMESPACE }} \
+          --create-namespace \
+          --set app.name=${{ env.APP_NAME }} \
+          --set image.repository=${{ env.IMAGE_REPOSITORY }} \
+          --set image.tag=${{ env.IMAGE_TAG }} \
+        
+        # Show deployment status
+        echo "Deployment completed successfully. Status:"
+        helm status ${{ env.APP_NAME }} -n ${{ env.NAMESPACE }}
+        kubectl get pods -l app.kubernetes.io/name=${{ env.APP_NAME }} -n ${{ env.NAMESPACE }}
+        kubectl get svc -l app.kubernetes.io/name=${{ env.APP_NAME }} -n ${{ env.NAMESPACE }} || true
