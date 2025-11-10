@@ -1,0 +1,242 @@
+# Generic Helm Chart Values for EKS Deployment
+# This chart can be used to deploy any Dockerized application to EKS
+
+# Application Configuration
+app:
+  name: ""  # Application name (required)
+  version: "latest"  # Application version
+
+# Deployment Configuration
+replicaCount: 2
+
+# Image Configuration
+image:
+  repository: ""  # Docker image repository (required)
+  pullPolicy: Always  # ImagePullPolicy: Always, IfNotPresent, Never
+  tag: "latest"  # Image tag (required)
+  pullSecrets: []  # List of image pull secrets
+
+# Name overrides
+nameOverride: ""
+fullnameOverride: ""
+
+# Service Account
+serviceAccount:
+  create: false
+  annotations: {}
+  name: ""
+
+# Pod Configuration
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext: {}
+  # fsGroup: 2000
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# Service Configuration
+service:
+  type: ClusterIP  # ClusterIP, NodePort, LoadBalancer
+  port: 80
+  targetPort: 8080  # Container port
+  protocol: TCP
+  annotations: {}
+
+# Ingress Configuration
+ingress:
+  enabled: false
+  className: ""  # nginx, alb, etc.
+  annotations: {}
+  hosts:
+    - host: app.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+    # - secretName: app-tls
+    #   hosts:
+    #     - app.example.com
+
+# Resource Limits and Requests
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+# Horizontal Pod Autoscaling
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+  behavior: {}  # Advanced scaling behavior
+
+# Node Selection and Affinity
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# Environment Variables
+env: []
+  # Example:
+  # - name: DATABASE_URL
+  #   value: "postgresql://localhost:5432/mydb"
+  # - name: API_KEY
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: app-secrets
+  #       key: api-key
+
+# Additional environment variables from ConfigMap
+envFrom: []
+  # Example:
+  # - configMapRef:
+  #     name: app-config
+
+# Health Checks Configuration
+healthCheck:
+  enabled: false
+  # HTTP Get Probe
+  httpGet:
+    enabled: true
+    path: /actuator/health  # Health check endpoint (Spring Boot Actuator)
+    port: 8080  # Port to check
+    scheme: HTTP  # HTTP or HTTPS
+  # TCP Socket Probe (alternative to httpGet)
+  tcpSocket:
+    enabled: false
+    port: 8080
+  # Exec Probe (alternative to httpGet/tcpSocket)
+  exec:
+    enabled: false
+    command: []
+      # - /bin/sh
+      # - -c
+      # - "curl -f http://localhost:8080/health || exit 1"
+  
+  # Probe timing configuration
+  livenessProbe:
+    enabled: false
+    initialDelaySeconds: 60
+    periodSeconds: 10
+    timeoutSeconds: 5
+    successThreshold: 1
+    failureThreshold: 3
+  
+  readinessProbe:
+    enabled: false
+    initialDelaySeconds: 30
+    periodSeconds: 5
+    timeoutSeconds: 3
+    successThreshold: 1
+    failureThreshold: 3
+  
+  startupProbe:
+    enabled: false
+    initialDelaySeconds: 0
+    periodSeconds: 10
+    timeoutSeconds: 3
+    successThreshold: 1
+    failureThreshold: 30
+
+# Secret Management
+secret:
+  create: false  # Set to true to create secret from values
+  name: ""  # Secret name (required if create=true)
+  type: Opaque  # Opaque, kubernetes.io/tls, etc.
+  data: {}  # Key-value pairs for secret data
+    # Example:
+    # api-key: "base64-encoded-value"
+    # password: "base64-encoded-value"
+
+# ConfigMap Management
+configMap:
+  create: false
+  name: ""  # ConfigMap name (required if create=true)
+  data: {}  # Key-value pairs for config data
+    # Example:
+    # config.yaml: |
+    #   key: value
+
+# Volume Mounts
+volumes: []
+  # Example:
+  # - name: config-volume
+  #   configMap:
+  #     name: app-config
+
+volumeMounts: []
+  # Example:
+  # - name: config-volume
+  #   mountPath: /etc/config
+  #   readOnly: true
+
+# Init Containers
+initContainers: []
+  # Example:
+  # - name: init-db
+  #   image: busybox
+  #   command: ['sh', '-c', 'echo "Initializing..."']
+
+# Additional Container Arguments
+command: []  # Override container command
+args: []  # Override container args
+
+# Lifecycle Hooks
+lifecycle: {}
+  # preStop:
+  #   exec:
+  #     command: ["/bin/sh", "-c", "sleep 15"]
+  # postStart:
+  #   exec:
+  #     command: ["/bin/sh", "-c", "echo 'Started'"]
+
+# Pod Disruption Budget
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1  # or use maxUnavailable
+  maxUnavailable: ""
+  selector: {}
+
+# Network Policies
+networkPolicy:
+  enabled: false
+  policyTypes: []
+    # - Ingress
+    # - Egress
+  ingress: []
+  egress: []
+
+# Service Monitor (for Prometheus)
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  scrapeTimeout: 10s
+  path: /metrics
+  labels: {}
+
+# Additional Pod Spec
+extraPodSpec: {}
+
+# Deployment Strategy
+deploymentStrategy:
+  type: RollingUpdate  # RollingUpdate or Recreate
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
